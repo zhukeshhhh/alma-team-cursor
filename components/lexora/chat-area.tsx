@@ -12,8 +12,11 @@ interface ChatAreaProps {
   messages: Message[];
   inputValue: string;
   onInputChange: (value: string) => void;
-  onSendMessage: () => void;
+  onSendMessage: () => void | Promise<void>;
   uploading?: boolean;
+  streaming?: boolean;
+  /** When false, chat input is disabled (e.g. document still processing) */
+  chatEnabled?: boolean;
 }
 
 export function ChatArea({
@@ -23,11 +26,15 @@ export function ChatArea({
   onInputChange,
   onSendMessage,
   uploading = false,
+  streaming = false,
+  chatEnabled = true,
 }: ChatAreaProps) {
+  const inputLocked = uploading || streaming || !chatEnabled;
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      onSendMessage();
+      void onSendMessage();
     }
   };
 
@@ -88,9 +95,15 @@ export function ChatArea({
               value={inputValue}
               onChange={(e) => onInputChange(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask anything about this document..."
+              placeholder={
+                !activeDocument
+                  ? "Select a document in the sidebar…"
+                  : !chatEnabled
+                    ? "Wait until the document is ready…"
+                    : "Ask anything about this document…"
+              }
               className="h-11 pr-10 bg-background"
-              disabled={uploading}
+              disabled={inputLocked}
             />
             <button
               type="button"
@@ -101,10 +114,10 @@ export function ChatArea({
             </button>
           </div>
           <Button
-            onClick={onSendMessage}
+            onClick={() => void onSendMessage()}
             size="icon"
             className="h-11 w-11 shrink-0"
-            disabled={!inputValue.trim() || uploading}
+            disabled={!inputValue.trim() || inputLocked}
           >
             <Send className="h-4 w-4" />
             <span className="sr-only">Send message</span>

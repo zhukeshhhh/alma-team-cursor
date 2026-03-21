@@ -79,6 +79,8 @@ export default function LexoraPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [streaming, setStreaming] = useState(false);
+  const [chatId, setChatId] = useState<string | null>(null);
 
   useEffect(() => {
     if (documents.length === 0) return;
@@ -89,6 +91,11 @@ export default function LexoraPage() {
   }, [documents]);
 
   const activeDocument = documents.find((doc) => doc.id === activeDocumentId);
+
+  useEffect(() => {
+    setChatId(null);
+    setMessages([]);
+  }, [activeDocumentId]);
 
   const handleUploadFiles = useCallback(
     async (files: FileList) => {
@@ -126,18 +133,103 @@ export default function LexoraPage() {
     [createDocument]
   );
 
-  const handleSendMessage = () => {
-    if (!inputValue.trim()) return;
+  const handleSendMessage = useCallback(async () => {
+    const text = inputValue.trim();
+    if (!text || !activeDocumentId || streaming) return;
+    if (activeDocument?.status !== "ready") return;
 
-    const newMessage: Message = {
-      id: Date.now().toString(),
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
       role: "user",
-      content: inputValue,
+      content: text,
     };
-
-    setMessages((prev) => [...prev, newMessage]);
+    const assistantId = crypto.randomUUID();
     setInputValue("");
-  };
+    setMessages((prev) => [
+      ...prev,
+      userMessage,
+      { id: assistantId, role: "assistant", content: "" },
+    ]);
+    setStreaming(true);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: userMessage.content,
+          documentId: activeDocumentId,
+          chatId,
+        }),
+      });
+
+      const headerChatId = res.headers.get("X-Chat-Id");
+      if (headerChatId) setChatId(headerChatId);
+
+      if (!res.ok || !res.body) {
+        const errBody = await res.json().catch(() => ({})) as {
+          error?: string;
+        };
+        const msg = errBody.error ?? res.statusText;
+        setMessages((prev) => {
+          const next = [...prev];
+          const last = next[next.length - 1];
+          if (last?.role === "assistant") {
+            next[next.length - 1] = {
+              ...last,
+              content: `Sorry — ${msg}`,
+            };
+          }
+          return next;
+        });
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        if (!chunk) continue;
+        setMessages((prev) => {
+          const next = [...prev];
+          const last = next[next.length - 1];
+          if (last?.role === "assistant") {
+            next[next.length - 1] = {
+              ...last,
+              content: last.content + chunk,
+            };
+          }
+          return next;
+        });
+      }
+    } catch (err) {
+      console.error("Chat error:", err);
+      setMessages((prev) => {
+        const next = [...prev];
+        const last = next[next.length - 1];
+        if (last?.role === "assistant") {
+          next[next.length - 1] = {
+            ...last,
+            content: "Something went wrong. Try again.",
+          };
+        }
+        return next;
+      });
+    } finally {
+      setStreaming(false);
+    }
+  }, [
+    inputValue,
+    activeDocumentId,
+    activeDocument?.status,
+    streaming,
+    chatId,
+  ]);
+
+  const chatEnabled =
+    Boolean(activeDocumentId) && activeDocument?.status === "ready";
 
   return (
     <div className="flex h-screen min-h-0 overflow-hidden">
@@ -156,6 +248,8 @@ export default function LexoraPage() {
         onInputChange={setInputValue}
         onSendMessage={handleSendMessage}
         uploading={uploading}
+        streaming={streaming}
+        chatEnabled={chatEnabled}
       />
     </div>
   );

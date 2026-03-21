@@ -27,6 +27,14 @@ export function ChatMessage({ message }: ChatMessageProps) {
     );
   }
 
+  if (!message.content.trim()) {
+    return (
+      <div className="flex justify-start">
+        <div className="text-muted-foreground text-sm animate-pulse">Thinking…</div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex justify-start">
       <div className="max-w-[85%]">

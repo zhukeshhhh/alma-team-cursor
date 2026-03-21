@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { getEmbedding } from "@/lib/embeddings";
+import { splitTextRecursive } from "@/lib/text-splitter";
 
 export const runtime = "nodejs";
 
@@ -50,15 +51,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const splitter = new RecursiveCharacterTextSplitter({
-      chunkSize: 500,
-      chunkOverlap: 50,
-    });
-    const chunks = await splitter.splitText(text);
+    const chunks = splitTextRecursive(text, 500, 50);
 
-    await convex.mutation(api.embeddings.storeChunks, {
+    const chunksWithVectors = await Promise.all(
+      chunks.map(async (chunkText, chunkIndex) => ({
+        chunkText,
+        chunkIndex,
+        vector: await getEmbedding(chunkText),
+      }))
+    );
+
+    await convex.mutation(api.embeddings.storeChunksWithVectors, {
       documentId,
-      chunks,
+      chunks: chunksWithVectors,
     });
 
     await convex.mutation(api.documents.updateDocumentStatus, {
