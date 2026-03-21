@@ -1,3 +1,6 @@
+export const runtime = "nodejs";
+
+import { createRequire } from "node:module";
 import { NextRequest, NextResponse } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
@@ -5,7 +8,11 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { getEmbedding } from "@/lib/embeddings";
 import { splitTextRecursive } from "@/lib/text-splitter";
 
-export const runtime = "nodejs";
+/** Load pdf-parse implementation file only — avoids `index.js` test/debug path in some bundlers. */
+const requirePdf = createRequire(import.meta.url);
+const pdfParse = requirePdf("pdf-parse/lib/pdf-parse.js") as (
+  data: Buffer
+) => Promise<{ text: string }>;
 
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
 const convex = convexUrl ? new ConvexHttpClient(convexUrl) : null;
@@ -98,14 +105,8 @@ async function extractText(file: File): Promise<string> {
   const nameLower = file.name.toLowerCase();
 
   if (type === "application/pdf" || nameLower.endsWith(".pdf")) {
-    const { PDFParse } = await import("pdf-parse");
-    const parser = new PDFParse({ data: buffer });
-    try {
-      const result = await parser.getText();
-      return result.text;
-    } finally {
-      await parser.destroy();
-    }
+    const result = await pdfParse(buffer);
+    return result.text;
   }
 
   if (
