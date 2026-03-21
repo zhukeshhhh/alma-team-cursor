@@ -1,6 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { formatDistanceToNow } from "date-fns";
+import { useMutation, useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { Sidebar } from "@/components/lexora/sidebar";
 import { ChatArea } from "@/components/lexora/chat-area";
 
@@ -19,43 +22,45 @@ export interface Message {
   sources?: { title: string; page: string }[];
 }
 
-const dummyDocuments: Document[] = [
-  {
-    id: "1",
-    name: "Corporate_Merger_Agreement_2024.pdf",
-    type: "PDF",
-    status: "ready",
-    timestamp: "2 hours ago",
-  },
-  {
-    id: "2",
-    name: "Regulatory_Compliance_Report.docx",
-    type: "DOCX",
-    status: "ready",
-    timestamp: "5 hours ago",
-  },
-  {
-    id: "3",
-    name: "Financial_Audit_Q4.xlsx",
-    type: "XLSX",
-    status: "processing",
-    timestamp: "12 hours ago",
-  },
-  {
-    id: "4",
-    name: "Employment_Contract_Template.pdf",
-    type: "PDF",
-    status: "ready",
-    timestamp: "1 day ago",
-  },
-  {
-    id: "5",
-    name: "Risk_Assessment_Matrix.xlsx",
-    type: "XLSX",
-    status: "ready",
-    timestamp: "3 days ago",
-  },
-];
+type ConvexDocument = {
+  _id: string;
+  _creationTime: number;
+  name: string;
+  fileType: string;
+  sizeBytes: number;
+  userId: string;
+  status: "processing" | "ready";
+};
+
+function inferDocType(name: string, fileType: string): Document["type"] {
+  const n = name.toLowerCase();
+  if (n.endsWith(".pdf") || fileType === "application/pdf") return "PDF";
+  if (
+    n.endsWith(".docx") ||
+    fileType.includes("wordprocessingml") ||
+    fileType === "application/msword"
+  ) {
+    return "DOCX";
+  }
+  if (
+    n.endsWith(".xlsx") ||
+    fileType.includes("spreadsheetml") ||
+    fileType.includes("excel")
+  ) {
+    return "XLSX";
+  }
+  return "PDF";
+}
+
+function convexDocToDocument(doc: ConvexDocument): Document {
+  return {
+    id: doc._id,
+    name: doc.name,
+    type: inferDocType(doc.name, doc.fileType),
+    status: doc.status,
+    timestamp: formatDistanceToNow(doc._creationTime, { addSuffix: true }),
+  };
+}
 
 const dummyMessages: Message[] = [
   {
@@ -93,12 +98,40 @@ const dummyMessages: Message[] = [
 ];
 
 export default function LexoraPage() {
-  const [documents] = useState<Document[]>(dummyDocuments);
-  const [activeDocumentId, setActiveDocumentId] = useState<string>("1");
+  const rawDocuments = useQuery(api.documents.listDocuments, {
+    userId: "demo-user",
+  });
+  const createDocument = useMutation(api.documents.createDocument);
+
+  const documents = useMemo((): Document[] => {
+    const rows = (rawDocuments ?? []) as ConvexDocument[];
+    return rows.map(convexDocToDocument);
+  }, [rawDocuments]);
+
+  const [activeDocumentId, setActiveDocumentId] = useState<string>("");
   const [messages, setMessages] = useState<Message[]>(dummyMessages);
   const [inputValue, setInputValue] = useState("");
 
+  useEffect(() => {
+    if (documents.length === 0) {
+      setActiveDocumentId("");
+      return;
+    }
+    setActiveDocumentId((prev) =>
+      prev && documents.some((d) => d.id === prev) ? prev : documents[0].id
+    );
+  }, [documents]);
+
   const activeDocument = documents.find((doc) => doc.id === activeDocumentId);
+
+  const handleUpload = async (file: File) => {
+    await createDocument({
+      name: file.name,
+      fileType: file.type,
+      sizeBytes: file.size,
+      userId: "demo-user",
+    });
+  };
 
   const handleSendMessage = () => {
     if (!inputValue.trim()) return;
@@ -119,6 +152,7 @@ export default function LexoraPage() {
         documents={documents}
         activeDocumentId={activeDocumentId}
         onSelectDocument={setActiveDocumentId}
+        onUploadFile={handleUpload}
       />
       <ChatArea
         activeDocument={activeDocument}

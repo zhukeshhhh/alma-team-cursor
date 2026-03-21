@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import { Shield, Upload, FileText, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -10,6 +11,7 @@ interface SidebarProps {
   documents: Document[];
   activeDocumentId: string;
   onSelectDocument: (id: string) => void;
+  onUploadFile?: (file: File) => void | Promise<void>;
 }
 
 const typeColors: Record<Document["type"], string> = {
@@ -22,7 +24,10 @@ export function Sidebar({
   documents,
   activeDocumentId,
   onSelectDocument,
+  onUploadFile,
 }: SidebarProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   return (
     <aside
       className="flex h-full w-[280px] shrink-0 flex-col"
@@ -40,9 +45,22 @@ export function Sidebar({
 
       {/* Upload Button */}
       <div className="px-4 py-4">
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          accept=".pdf,.doc,.docx,.xls,.xlsx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file && onUploadFile) void onUploadFile(file);
+            e.target.value = "";
+          }}
+        />
         <Button
+          type="button"
           className="w-full justify-center gap-2 bg-sidebar-primary text-white hover:bg-sidebar-primary/90"
           size="default"
+          onClick={() => fileInputRef.current?.click()}
         >
           <Upload className="h-4 w-4" />
           Upload Document
