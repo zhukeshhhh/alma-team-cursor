@@ -92,13 +92,34 @@ const dummyMessages: Message[] = [
   },
 ];
 
+function fileTypeFromName(name: string): Document["type"] {
+  const ext = name.split(".").pop()?.toLowerCase();
+  if (ext === "xlsx" || ext === "xls") return "XLSX";
+  if (ext === "pdf") return "PDF";
+  return "DOCX";
+}
+
 export default function LexoraPage() {
-  const [documents] = useState<Document[]>(dummyDocuments);
+  const [documents, setDocuments] = useState<Document[]>(dummyDocuments);
   const [activeDocumentId, setActiveDocumentId] = useState<string>("1");
   const [messages, setMessages] = useState<Message[]>(dummyMessages);
   const [inputValue, setInputValue] = useState("");
 
   const activeDocument = documents.find((doc) => doc.id === activeDocumentId);
+
+  const handleUploadFiles = (files: FileList) => {
+    const list = Array.from(files);
+    if (list.length === 0) return;
+    const added: Document[] = list.map((file, i) => ({
+      id: `upload-${Date.now()}-${i}`,
+      name: file.name,
+      type: fileTypeFromName(file.name),
+      status: "processing" as const,
+      timestamp: "Just now",
+    }));
+    setDocuments((prev) => [...added, ...prev]);
+    setActiveDocumentId(added[0].id);
+  };
 
   const handleSendMessage = () => {
     if (!inputValue.trim()) return;
@@ -114,11 +135,12 @@ export default function LexoraPage() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen min-h-0 overflow-hidden">
       <Sidebar
         documents={documents}
         activeDocumentId={activeDocumentId}
         onSelectDocument={setActiveDocumentId}
+        onUploadFiles={handleUploadFiles}
       />
       <ChatArea
         activeDocument={activeDocument}

@@ -30,7 +30,7 @@ export function ChatArea({
   };
 
   return (
-    <main className="flex flex-1 flex-col bg-background">
+    <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
       {/* Top Bar */}
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-6">
         <div className="flex items-center gap-2.5">
@@ -54,8 +54,8 @@ export function ChatArea({
         </Button>
       </header>
 
-      {/* Chat Messages */}
-      <ScrollArea className="flex-1 px-6 py-6">
+      {/* Chat Messages — min-h-0 so flex-1 can shrink and the input bar stays in view */}
+      <ScrollArea className="min-h-0 flex-1 px-6 py-6">
         <div className="mx-auto max-w-3xl space-y-6">
           {messages.map((message) => (
             <ChatMessage key={message.id} message={message} />
