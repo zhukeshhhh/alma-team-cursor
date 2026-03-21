@@ -1,14 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery } from "convex/react";
+import type { Doc } from "@/convex/_generated/dataModel";
+import { api } from "@/convex/_generated/api";
 import { Sidebar } from "@/components/lexora/sidebar";
 import { ChatArea } from "@/components/lexora/chat-area";
+
+const DEMO_USER_ID = "demo-user";
+
+export type DocumentStatus =
+  | "uploading"
+  | "processing"
+  | "ready"
+  | "error";
 
 export interface Document {
   id: string;
   name: string;
-  type: "PDF" | "DOCX" | "XLSX";
-  status: "processing" | "ready";
+  type: "PDF" | "DOCX" | "XLSX" | "TXT";
+  status: DocumentStatus;
   timestamp: string;
 }
 
@@ -19,107 +30,101 @@ export interface Message {
   sources?: { title: string; page: string }[];
 }
 
-const dummyDocuments: Document[] = [
-  {
-    id: "1",
-    name: "Corporate_Merger_Agreement_2024.pdf",
-    type: "PDF",
-    status: "ready",
-    timestamp: "2 hours ago",
-  },
-  {
-    id: "2",
-    name: "Regulatory_Compliance_Report.docx",
-    type: "DOCX",
-    status: "ready",
-    timestamp: "5 hours ago",
-  },
-  {
-    id: "3",
-    name: "Financial_Audit_Q4.xlsx",
-    type: "XLSX",
-    status: "processing",
-    timestamp: "12 hours ago",
-  },
-  {
-    id: "4",
-    name: "Employment_Contract_Template.pdf",
-    type: "PDF",
-    status: "ready",
-    timestamp: "1 day ago",
-  },
-  {
-    id: "5",
-    name: "Risk_Assessment_Matrix.xlsx",
-    type: "XLSX",
-    status: "ready",
-    timestamp: "3 days ago",
-  },
-];
+function formatUploadedAt(ts: number): string {
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
 
-const dummyMessages: Message[] = [
-  {
-    id: "1",
-    role: "user",
-    content:
-      "What are the key termination clauses in this merger agreement?",
-  },
-  {
-    id: "2",
-    role: "assistant",
-    content:
-      "Based on my analysis of the Corporate Merger Agreement, there are three primary termination clauses:\n\n1. **Material Adverse Change (MAC) Clause** - Either party may terminate if a material adverse change occurs affecting the target company's business, financial condition, or operations.\n\n2. **Regulatory Approval Failure** - The agreement allows termination if required regulatory approvals are not obtained within 180 days of signing.\n\n3. **Breach of Representations** - Termination is permitted if either party materially breaches representations and warranties, subject to a 30-day cure period.",
-    sources: [
-      { title: "Section 8.1 - Termination Rights", page: "Page 45" },
-      { title: "Section 8.2 - MAC Definition", page: "Page 47" },
-      { title: "Schedule A - Regulatory Requirements", page: "Page 89" },
-    ],
-  },
-  {
-    id: "3",
-    role: "user",
-    content: "Are there any potential liability risks I should be aware of?",
-  },
-  {
-    id: "4",
-    role: "assistant",
-    content:
-      "I've identified several potential liability risks in this agreement:\n\n**High Risk:**\n- The indemnification cap is set at 150% of the purchase price, which exceeds industry standard (typically 100%).\n- Environmental liability carve-outs are notably absent.\n\n**Medium Risk:**\n- Survival period for representations extends 36 months post-closing.\n- Basket threshold for claims is relatively low at $250,000.\n\n**Recommendations:**\nConsider negotiating the indemnification cap downward and adding specific environmental liability protections before execution.",
-    sources: [
-      { title: "Section 9.3 - Indemnification Limits", page: "Page 52" },
-      { title: "Section 7.2 - Environmental Matters", page: "Page 38" },
-    ],
-  },
-];
+function fileTypeFromMime(fileType: string, name: string): Document["type"] {
+  const n = name.toLowerCase();
+  if (n.endsWith(".pdf")) return "PDF";
+  if (n.endsWith(".docx")) return "DOCX";
+  if (n.endsWith(".txt")) return "TXT";
+  if (n.endsWith(".xlsx") || n.endsWith(".xls")) return "XLSX";
+  if (fileType.includes("pdf")) return "PDF";
+  if (fileType.includes("spreadsheet") || fileType.includes("excel")) return "XLSX";
+  if (fileType.includes("word")) return "DOCX";
+  if (fileType.startsWith("text/")) return "TXT";
+  return "PDF";
+}
 
-function fileTypeFromName(name: string): Document["type"] {
-  const ext = name.split(".").pop()?.toLowerCase();
-  if (ext === "xlsx" || ext === "xls") return "XLSX";
-  if (ext === "pdf") return "PDF";
-  return "DOCX";
+function mapConvexDoc(doc: Doc<"documents">): Document {
+  return {
+    id: doc._id,
+    name: doc.name,
+    type: fileTypeFromMime(doc.fileType, doc.name),
+    status: doc.status,
+    timestamp: formatUploadedAt(doc.uploadedAt),
+  };
 }
 
 export default function LexoraPage() {
-  const [documents, setDocuments] = useState<Document[]>(dummyDocuments);
-  const [activeDocumentId, setActiveDocumentId] = useState<string>("1");
-  const [messages, setMessages] = useState<Message[]>(dummyMessages);
+  const createDocument = useMutation(api.documents.createDocument);
+  const convexDocs = useQuery(api.documents.listDocuments, {
+    userId: DEMO_USER_ID,
+  });
+
+  const documents: Document[] = useMemo(
+    () => (convexDocs ?? []).map(mapConvexDoc),
+    [convexDocs]
+  );
+
+  const [activeDocumentId, setActiveDocumentId] = useState<string>("");
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
+  const [uploading, setUploading] = useState(false);
+
+  useEffect(() => {
+    if (documents.length === 0) return;
+    setActiveDocumentId((prev) => {
+      if (prev && documents.some((d) => d.id === prev)) return prev;
+      return documents[0].id;
+    });
+  }, [documents]);
 
   const activeDocument = documents.find((doc) => doc.id === activeDocumentId);
 
-  const handleUploadFiles = (files: FileList) => {
-    const list = Array.from(files);
-    if (list.length === 0) return;
-    const added: Document[] = list.map((file, i) => ({
-      id: `upload-${Date.now()}-${i}`,
-      name: file.name,
-      type: fileTypeFromName(file.name),
-      status: "processing" as const,
-      timestamp: "Just now",
-    }));
-    setDocuments((prev) => [...added, ...prev]);
-    setActiveDocumentId(added[0].id);
-  };
+  const handleUploadFiles = useCallback(
+    async (files: FileList) => {
+      const list = Array.from(files);
+      if (list.length === 0) return;
+
+      setUploading(true);
+      try {
+        for (const file of list) {
+          const documentId = await createDocument({
+            name: file.name,
+            fileType: file.type || "application/octet-stream",
+            sizeBytes: file.size,
+            userId: DEMO_USER_ID,
+          });
+
+          const formData = new FormData();
+          formData.append("file", file);
+          formData.append("documentId", documentId);
+
+          const res = await fetch("/api/ingest", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            console.error("Ingestion failed:", err);
+          }
+        }
+      } finally {
+        setUploading(false);
+      }
+    },
+    [createDocument]
+  );
 
   const handleSendMessage = () => {
     if (!inputValue.trim()) return;
@@ -130,7 +135,7 @@ export default function LexoraPage() {
       content: inputValue,
     };
 
-    setMessages([...messages, newMessage]);
+    setMessages((prev) => [...prev, newMessage]);
     setInputValue("");
   };
 
@@ -141,6 +146,8 @@ export default function LexoraPage() {
         activeDocumentId={activeDocumentId}
         onSelectDocument={setActiveDocumentId}
         onUploadFiles={handleUploadFiles}
+        uploading={uploading}
+        documentsLoading={convexDocs === undefined}
       />
       <ChatArea
         activeDocument={activeDocument}
@@ -148,6 +155,7 @@ export default function LexoraPage() {
         inputValue={inputValue}
         onInputChange={setInputValue}
         onSendMessage={handleSendMessage}
+        uploading={uploading}
       />
     </div>
   );

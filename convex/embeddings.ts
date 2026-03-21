@@ -9,7 +9,7 @@ export const storeChunks = mutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("embeddings")
-      .filter((q) => q.eq(q.field("documentId"), args.documentId))
+      .withIndex("by_documentId", (q) => q.eq("documentId", args.documentId))
       .collect();
     for (const chunk of existing) {
       await ctx.db.delete(chunk._id);
@@ -27,10 +27,10 @@ export const storeChunks = mutation({
 export const getChunksByDocument = query({
   args: { documentId: v.id("documents") },
   handler: async (ctx, args) => {
-    return await ctx.db
+    const rows = await ctx.db
       .query("embeddings")
-      .filter((q) => q.eq(q.field("documentId"), args.documentId))
-      .order("asc")
+      .withIndex("by_documentId", (q) => q.eq("documentId", args.documentId))
       .collect();
+    return rows.sort((a, b) => a.chunkIndex - b.chunkIndex);
   },
 });

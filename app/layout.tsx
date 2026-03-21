@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, JetBrains_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import { cn } from "@/lib/utils";
+import { ConvexClientProvider } from "@/components/ConvexClientProvider";
 
 const jetbrainsMono = JetBrains_Mono({subsets:['latin'],variable:'--font-mono'});
 
@@ -40,7 +41,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={cn("font-mono", jetbrainsMono.variable)}>
       <body className="font-sans antialiased">
-        {children}
+        <ConvexClientProvider>{children}</ConvexClientProvider>
         <Analytics />
       </body>
     </html>

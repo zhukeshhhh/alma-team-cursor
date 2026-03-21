@@ -1,8 +1,7 @@
 "use client";
 
-import { useRef } from "react";
 import { Shield, Upload, FileText, FileSpreadsheet } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { Document } from "@/app/page";
@@ -11,13 +10,23 @@ interface SidebarProps {
   documents: Document[];
   activeDocumentId: string;
   onSelectDocument: (id: string) => void;
-  onUploadFiles?: (files: FileList) => void;
+  onUploadFiles?: (files: FileList) => void | Promise<void>;
+  uploading?: boolean;
+  documentsLoading?: boolean;
 }
 
 const typeColors: Record<Document["type"], string> = {
   PDF: "bg-red-500/20 text-red-400",
   DOCX: "bg-blue-500/20 text-blue-400",
   XLSX: "bg-emerald-500/20 text-emerald-400",
+  TXT: "bg-violet-500/20 text-violet-400",
+};
+
+const statusDotClass: Record<Document["status"], string> = {
+  uploading: "bg-gray-400",
+  processing: "bg-yellow-400 animate-pulse",
+  ready: "bg-emerald-500",
+  error: "bg-red-500",
 };
 
 export function Sidebar({
@@ -25,12 +34,12 @@ export function Sidebar({
   activeDocumentId,
   onSelectDocument,
   onUploadFiles,
+  uploading = false,
+  documentsLoading = false,
 }: SidebarProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   return (
     <aside
-      className="flex h-full w-[280px] shrink-0 flex-col"
+      className="flex h-full min-h-0 w-[280px] shrink-0 flex-col"
       style={{ backgroundColor: "#0F1117" }}
     >
       {/* Logo */}
@@ -43,34 +52,43 @@ export function Sidebar({
         </span>
       </div>
 
-      {/* Upload — hidden input opens the system file picker */}
+      {/* Upload — label + hidden input opens the picker without programmatic click (more reliable than ref.click on sr-only inputs) */}
       <div className="px-4 py-4">
-        <input
-          ref={fileInputRef}
-          type="file"
-          className="sr-only"
-          accept=".pdf,.doc,.docx,.xls,.xlsx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          multiple
-          onChange={(e) => {
-            const list = e.target.files;
-            if (list?.length) onUploadFiles?.(list);
-            e.target.value = "";
-          }}
-        />
-        <Button
-          type="button"
-          className="w-full justify-center gap-2 bg-sidebar-primary text-white hover:bg-sidebar-primary/90"
-          size="default"
-          onClick={() => fileInputRef.current?.click()}
+        <label
+          className={cn(
+            buttonVariants({ variant: "default", size: "default" }),
+            "w-full cursor-pointer justify-center gap-2 bg-sidebar-primary text-white hover:bg-sidebar-primary/90",
+            uploading && "pointer-events-none cursor-not-allowed opacity-50"
+          )}
         >
+          <input
+            type="file"
+            className="hidden"
+            accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+            multiple
+            disabled={uploading}
+            onChange={(e) => {
+              const list = e.target.files;
+              if (list?.length) void onUploadFiles?.(list);
+              e.target.value = "";
+            }}
+          />
           <Upload className="h-4 w-4" />
-          Upload Document
-        </Button>
+          {uploading ? "Processing…" : "Upload Document"}
+        </label>
       </div>
 
       {/* Document List */}
-      <ScrollArea className="flex-1 px-3">
+      <ScrollArea className="flex-1 min-h-0 px-3">
         <div className="space-y-1 pb-4">
+          {documentsLoading && (
+            <p className="px-3 py-2 text-sm text-sidebar-muted">Loading documents…</p>
+          )}
+          {!documentsLoading && documents.length === 0 && (
+            <p className="px-3 py-2 text-sm text-sidebar-muted">
+              No documents yet. Upload a PDF, DOCX, or TXT file.
+            </p>
+          )}
           {documents.map((doc) => (
             <DocumentItem
               key={doc.id}
@@ -128,7 +146,7 @@ function DocumentItem({ document, isActive, onClick }: DocumentItemProps) {
           <span
             className={cn(
               "inline-flex h-1.5 w-1.5 rounded-full",
-              document.status === "ready" ? "bg-emerald-500" : "bg-gray-500"
+              statusDotClass[document.status]
             )}
           />
           <span className="text-xs text-sidebar-muted">{document.timestamp}</span>

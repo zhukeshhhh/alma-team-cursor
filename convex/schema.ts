@@ -14,7 +14,7 @@ export default defineSchema({
     userId: v.string(),
     fileType: v.string(),
     sizeBytes: v.optional(v.number()),
-  }),
+  }).index("by_userId", ["userId"]),
 
   chats: defineTable({
     documentId: v.id("documents"),
@@ -32,5 +32,5 @@ export default defineSchema({
     chunkText: v.string(),
     chunkIndex: v.number(),
     vector: v.optional(v.array(v.float64())),
-  }),
+  }).index("by_documentId", ["documentId"]),
 });

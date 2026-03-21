@@ -13,6 +13,7 @@ interface ChatAreaProps {
   inputValue: string;
   onInputChange: (value: string) => void;
   onSendMessage: () => void;
+  uploading?: boolean;
 }
 
 export function ChatArea({
@@ -21,6 +22,7 @@ export function ChatArea({
   inputValue,
   onInputChange,
   onSendMessage,
+  uploading = false,
 }: ChatAreaProps) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -38,9 +40,24 @@ export function ChatArea({
           <span className="text-sm font-medium text-foreground">
             {activeDocument?.name || "No document selected"}
           </span>
+          {activeDocument?.status === "uploading" && (
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+              Uploading
+            </span>
+          )}
           {activeDocument?.status === "processing" && (
             <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600">
               Processing
+            </span>
+          )}
+          {activeDocument?.status === "ready" && (
+            <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700">
+              Ready
+            </span>
+          )}
+          {activeDocument?.status === "error" && (
+            <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-600">
+              Error
             </span>
           )}
         </div>
@@ -73,6 +90,7 @@ export function ChatArea({
               onKeyDown={handleKeyDown}
               placeholder="Ask anything about this document..."
               className="h-11 pr-10 bg-background"
+              disabled={uploading}
             />
             <button
               type="button"
@@ -86,7 +104,7 @@ export function ChatArea({
             onClick={onSendMessage}
             size="icon"
             className="h-11 w-11 shrink-0"
-            disabled={!inputValue.trim()}
+            disabled={!inputValue.trim() || uploading}
           >
             <Send className="h-4 w-4" />
             <span className="sr-only">Send message</span>
