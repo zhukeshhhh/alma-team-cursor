@@ -1,11 +1,20 @@
-const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL!;
+import { getOllamaBaseUrl } from "@/lib/ollama-config";
+
+/** Embedding model for `/api/embeddings` — not used for chat/summary text. */
+const EMBEDDING_MODEL =
+  process.env.OLLAMA_EMBEDDING_MODEL?.trim() || "nomic-embed-text";
 
 export async function getEmbedding(text: string): Promise<number[]> {
-  const response = await fetch(`${OLLAMA_BASE_URL}/api/embeddings`, {
+  const base = getOllamaBaseUrl();
+  if (!base) {
+    throw new Error("OLLAMA_BASE_URL is not set");
+  }
+
+  const response = await fetch(`${base}/api/embeddings`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "nomic-embed-text",
+      model: EMBEDDING_MODEL,
       prompt: text,
     }),
   });

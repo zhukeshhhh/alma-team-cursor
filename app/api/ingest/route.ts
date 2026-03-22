@@ -8,7 +8,6 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { getEmbedding } from "@/lib/embeddings";
 import { splitTextRecursive } from "@/lib/text-splitter";
 
-/** Load pdf-parse implementation file only — avoids `index.js` test/debug path in some bundlers. */
 const requirePdf = createRequire(import.meta.url);
 const pdfParse = requirePdf("pdf-parse/lib/pdf-parse.js") as (
   data: Buffer
@@ -19,6 +18,7 @@ const convex = convexUrl ? new ConvexHttpClient(convexUrl) : null;
 
 export async function POST(req: NextRequest) {
   let documentId: Id<"documents"> | null = null;
+
   try {
     if (!convex) {
       return NextResponse.json(
@@ -27,25 +27,58 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const formData = await req.formData();
-    const file = formData.get("file") as File | null;
-    const rawId = formData.get("documentId");
+    // --- Parse request --- supports both browser (multipart) and n8n (base64 JSON)
+    let buffer: Buffer;
+    let fileName: string;
+    let fileType: string;
+    let rawId: string;
 
-    if (!file || typeof rawId !== "string" || rawId.length === 0) {
-      return NextResponse.json(
-        { error: "Missing file or documentId" },
-        { status: 400 }
-      );
+    const contentType = req.headers.get("content-type") ?? "";
+
+    if (contentType.includes("application/json")) {
+      // n8n sends base64-encoded file content as JSON
+      const body = await req.json();
+
+      if (!body.fileContent || !body.fileName || !body.documentId) {
+        return NextResponse.json(
+          { error: "Missing fileContent, fileName, or documentId in JSON body" },
+          { status: 400 }
+        );
+      }
+
+      rawId = body.documentId;
+      fileName = body.fileName;
+      fileType = body.fileType ?? "";
+      buffer = Buffer.from(body.fileContent, "base64");
+    } else {
+      // Browser sends multipart/form-data
+      const formData = await req.formData();
+      const file = formData.get("file") as File | null;
+      const formId = formData.get("documentId");
+
+      if (!file || typeof formId !== "string" || formId.length === 0) {
+        return NextResponse.json(
+          { error: "Missing file or documentId in form data" },
+          { status: 400 }
+        );
+      }
+
+      rawId = formId;
+      fileName = file.name;
+      fileType = file.type;
+      buffer = Buffer.from(await file.arrayBuffer());
     }
 
     documentId = rawId as Id<"documents">;
 
+    // --- Mark as processing ---
     await convex.mutation(api.documents.updateDocumentStatus, {
       id: documentId,
       status: "processing",
     });
 
-    const text = await extractText(file);
+    // --- Extract text ---
+    const text = await extractTextFromBuffer(buffer, fileName, fileType);
 
     if (!text || text.trim().length === 0) {
       await convex.mutation(api.documents.updateDocumentStatus, {
@@ -58,6 +91,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // --- Chunk and embed ---
     const chunks = splitTextRecursive(text, 500, 50);
 
     const chunksWithVectors = await Promise.all(
@@ -68,6 +102,7 @@ export async function POST(req: NextRequest) {
       }))
     );
 
+    // --- Store in Convex ---
     await convex.mutation(api.embeddings.storeChunksWithVectors, {
       documentId,
       chunks: chunksWithVectors,
@@ -83,6 +118,7 @@ export async function POST(req: NextRequest) {
       chunkCount: chunks.length,
       charCount: text.length,
     });
+
   } catch (err) {
     console.error("Ingestion error:", err);
     if (convex && documentId) {
@@ -99,19 +135,20 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function extractText(file: File): Promise<string> {
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const type = file.type;
-  const nameLower = file.name.toLowerCase();
+async function extractTextFromBuffer(
+  buffer: Buffer,
+  fileName: string,
+  fileType: string
+): Promise<string> {
+  const nameLower = fileName.toLowerCase();
 
-  if (type === "application/pdf" || nameLower.endsWith(".pdf")) {
+  if (fileType === "application/pdf" || nameLower.endsWith(".pdf")) {
     const result = await pdfParse(buffer);
     return result.text;
   }
 
   if (
-    type ===
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    fileType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
     nameLower.endsWith(".docx")
   ) {
     const mammoth = await import("mammoth");
@@ -119,9 +156,9 @@ async function extractText(file: File): Promise<string> {
     return result.value;
   }
 
-  if (type === "text/plain" || nameLower.endsWith(".txt")) {
+  if (fileType === "text/plain" || nameLower.endsWith(".txt")) {
     return buffer.toString("utf-8");
   }
 
-  throw new Error(`Unsupported file type: ${type || file.name}`);
+  throw new Error(`Unsupported file type: ${fileType || fileName}`);
 }

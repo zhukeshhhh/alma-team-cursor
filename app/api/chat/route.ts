@@ -3,12 +3,12 @@ import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { getEmbedding, cosineSimilarity } from "@/lib/embeddings";
+import { getOllamaBaseUrl, getOllamaTextModel } from "@/lib/ollama-config";
 
 export const runtime = "nodejs";
 
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
 const convex = convexUrl ? new ConvexHttpClient(convexUrl) : null;
-const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL;
 const TOP_K = 5;
 
 export async function POST(req: NextRequest) {
@@ -19,12 +19,14 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       );
     }
-    if (!OLLAMA_BASE_URL) {
+    const ollamaBase = getOllamaBaseUrl();
+    if (!ollamaBase) {
       return NextResponse.json(
         { error: "OLLAMA_BASE_URL is not configured" },
         { status: 500 }
       );
     }
+    const textModel = getOllamaTextModel();
 
     const body = await req.json();
     const { message, documentId, chatId } = body as {
@@ -83,11 +85,11 @@ export async function POST(req: NextRequest) {
       content: message.trim(),
     });
 
-    const ollamaResponse = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+    const ollamaResponse = await fetch(`${ollamaBase}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "llama3-chatqa:8b",
+        model: textModel,
         stream: true,
         messages: [
           {

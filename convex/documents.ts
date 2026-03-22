@@ -48,3 +48,10 @@ export const listDocuments = query({
       .collect();
   },
 });
+
+export const getDocument = query({
+  args: { id: v.id("documents") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
+  },
+});
