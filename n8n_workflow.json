@@ -1,0 +1,416 @@
+{
+  "name": "Email Document Ingestion",
+  "nodes": [
+    {
+      "parameters": {
+        "format": "resolved",
+        "options": {
+          "customEmailConfig": "[\"UNSEEN\"]"
+        }
+      },
+      "id": "9612a9ff-ebbc-40cf-900b-ec4afea24962",
+      "name": "Email Trigger (IMAP)",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        320
+      ],
+      "credentials": {
+        "imap": {
+          "id": "jiomztnY1E2fKk0w",
+          "name": "IMAP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ Object.keys($binary).length }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "rightValue": 0,
+              "id": "84550c84-0468-4121-8183-e44ad9fb712e"
+            },
+            {
+              "leftValue": "={{ $binary.attachment_0?.fileName ?? \"\" }}",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              },
+              "rightValue": "=\\.(pdf|docx)$",
+              "id": "3d5d200b-8fdd-455a-b08a-b7f7b86504bf"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "id": "0e0d6da3-f32a-4371-8782-c55f64ea0d08",
+      "name": "Has PDF or DOCX?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        464,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b2f2dbf9-f1fb-4e48-a633-3fb5b817f839",
+              "name": "fileName",
+              "value": "={{ $binary.attachment_0.fileName }}",
+              "type": "string"
+            },
+            {
+              "id": "9e32686d-f818-4a0c-b4c5-2e0be6e55934",
+              "name": "fileType",
+              "value": "={{ $binary.attachment_0.mimeType }}",
+              "type": "string"
+            },
+            {
+              "id": "2cb96c16-dc5e-4f40-85a8-e70a75a9350f",
+              "name": "emailSubject",
+              "value": "={{ $json.subject }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "f2940e9c-9d03-469e-afe9-d5e5c99b2f98",
+      "name": "Extract Attachment",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        688,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://salary-fine-programmers-here.trycloudflare.com/api/documents/create",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"name\": \"Business invitation.pdf\", \"fileType\": \"application/pdf\", \"userId\": \"email-ingestion\"}",
+        "options": {}
+      },
+      "id": "39595b73-fdeb-4217-9ca2-a07287bffd23",
+      "name": "Create Document Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        896,
+        144
+      ],
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://salary-fine-programmers-here.trycloudflare.com/api/ingest",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"fileName\": \"{{ $json.fileName }}\",\n  \"fileType\": \"{{ $json.fileType }}\",\n  \"documentId\": \"{{ $json.documentId }}\",\n  \"fileContent\": \"{{ $json.fileContent }}\"\n}",
+        "options": {}
+      },
+      "id": "1219c448-5fa0-46e7-9c27-f07dc9239270",
+      "name": "Send to Ingestion Pipeline",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1360,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ \"https://salary-fine-programmers-here.trycloudflare.com/api/documents/\" + $('Code in JavaScript').item.json.documentId + \"/status\" }}",
+        "options": {}
+      },
+      "id": "69227c8a-8042-469d-a2af-c68c09c2c0f1",
+      "name": "Check Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1808,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.status }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "ready",
+              "id": "21432ce9-2e80-4fb7-8a07-d896d87f4515"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3ce88b0a-e867-4c80-8d7b-1a6d2e4a552e",
+      "name": "Status = Ready?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2032,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "id": "463c8a2e-79b8-436f-96e5-c93f776b8c74",
+      "name": "Wait Again",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2256,
+        416
+      ],
+      "webhookId": "1cdb5187-c7e3-4443-bd66-6e987ede45fb"
+    },
+    {
+      "parameters": {
+        "from": "onboarding@resend.dev",
+        "to": "ihormatyka@gmail.com",
+        "subject": "Document Update",
+        "html": "={{ \"Your document \" + $('Code in JavaScript').item.json.fileName + \" has been processed by Lexora and is ready for analysis. \\n  Your document's summary: \" + $json.summary + \" \" }}",
+        "additionalOptions": {}
+      },
+      "type": "n8n-nodes-resend.resend",
+      "typeVersion": 1,
+      "position": [
+        2464,
+        176
+      ],
+      "id": "b94ead9e-8df3-4158-8280-188a82733870",
+      "name": "Send a new email",
+      "webhookId": "59e43471-6b1e-4410-bf85-f01b9569bc91",
+      "credentials": {
+        "resendApi": {
+          "id": "2VQbbTnulQswETHl",
+          "name": "Resend account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst docRecord = $('Create Document Record').first().json;\n\nconst results = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i];\n  const binaryKeys = Object.keys(item.binary || {});\n  \n  if (binaryKeys.length > 0) {\n    const binaryKey = binaryKeys[0];\n    \n    // ЭТА СТРОКА САМАЯ ВАЖНАЯ: читаем файл и конвертим в Base64\n    const buffer = await this.helpers.getBinaryDataBuffer(i, binaryKey);\n    const base64 = buffer.toString('base64');\n\n    results.push({\n      json: {\n        fileName: item.json.fileName || item.binary[binaryKey].fileName,\n        fileType: item.json.fileType || item.binary[binaryKey].mimeType,\n        documentId: docRecord.documentId,\n        fileContent: base64, // Теперь тут РЕАЛЬНЫЕ данные\n      }\n    });\n  }\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1136,
+        320
+      ],
+      "id": "43d0cbf8-6782-452c-84d8-62ef38019312",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {},
+      "id": "ebe57c45-7689-45da-8219-73ade2a10775",
+      "name": "Wait 5 Seconds",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1584,
+        320
+      ],
+      "webhookId": "66c64994-f193-4f9c-8a26-de6c60d920dc"
+    },
+    {
+      "parameters": {
+        "url": "={{ \"https://salary-fine-programmers-here.trycloudflare.com/api/summarize?documentId=\" + $('Code in JavaScript').item.json.documentId }}",
+        "options": {}
+      },
+      "id": "8e80f94c-be53-4e7f-9c48-37dd03cfbc63",
+      "name": "Get Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2256,
+        192
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Email Trigger (IMAP)": {
+      "main": [
+        [
+          {
+            "node": "Has PDF or DOCX?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has PDF or DOCX?": {
+      "main": [
+        [
+          {
+            "node": "Extract Attachment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Attachment": {
+      "main": [
+        [
+          {
+            "node": "Create Document Record",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Document Record": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Ingestion Pipeline": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 Seconds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Status": {
+      "main": [
+        [
+          {
+            "node": "Status = Ready?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status = Ready?": {
+      "main": [
+        [
+          {
+            "node": "Get Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait Again",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Again": {
+      "main": [
+        [
+          {
+            "node": "Check Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Send to Ingestion Pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 Seconds": {
+      "main": [
+        [
+          {
+            "node": "Check Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Summary": {
+      "main": [
+        [
+          {
+            "node": "Send a new email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "46b6bb90-503c-413b-849b-7548fe0ef575",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "43191069fb5ccc6c87882abed9709e0c5e6bc40208ae90a8c1d8dda6fd54f3b0"
+  },
+  "id": "gruTzmp7tss6aUUA",
+  "tags": []
+}
